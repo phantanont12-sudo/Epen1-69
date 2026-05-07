@@ -161,6 +161,8 @@ function App(){
   const[newItem,setNewItem]=useState({name:"",price:"",emoji:"🍪",cat:"ขนม",type:"snack"});
   const[batchAmt,setBatchAmt]=useState("");
   const[txDate,setTxDate]=useState(todayISO());
+  const[dateConfirmed,setDateConfirmed]=useState(false);
+  const[reportMonth,setReportMonth]=useState(todayISO().slice(0,7));
 
   useEffect(()=>{const t=setInterval(()=>setClock(fmtTime()),1000);return()=>clearInterval(t)},[]);
 
@@ -190,6 +192,39 @@ function App(){
   const debtors=useMemo(()=>soldiers.filter(s=>getBal(s.id)<0).sort((a,b)=>getBal(a.id)-getBal(b.id)),[balances,soldiers]);
   const topSpenders=useMemo(()=>{const m={};dayTx.filter(t=>t.action==="purchase").forEach(t=>{m[t.soldierId]=(m[t.soldierId]||0)+t.total});return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([id,amt])=>({soldier:soldiers.find(s=>s.id===Number(id)),amount:amt}))},[dayTx,soldiers]);
 
+  // Report: daily summary for selected month
+  const monthTx=useMemo(()=>transactions.filter(t=>t.date&&t.date.startsWith(reportMonth)),[transactions,reportMonth]);
+  const dailySummary=useMemo(()=>{
+    const m={};monthTx.forEach(t=>{
+      if(!m[t.date])m[t.date]={date:t.date,purchases:0,snack:0,essential:0,topups:0,salary:0,txCount:0};
+      if(t.action==="purchase"){m[t.date].purchases+=t.total;m[t.date].txCount++;if(t.itemType==="snack")m[t.date].snack+=t.total;else if(t.itemType==="essential")m[t.date].essential+=t.total;else{m[t.date].snack+=t.total;m[t.date].essential+=t.total}}
+      else if(t.action==="topup")m[t.date].topups+=t.total;
+      else if(t.action==="salary")m[t.date].salary+=t.total;
+    });return Object.values(m).sort((a,b)=>a.date.localeCompare(b.date));
+  },[monthTx]);
+  const monthTotal=useMemo(()=>({
+    purchases:monthTx.filter(t=>t.action==="purchase").reduce((s,t)=>s+t.total,0),
+    snack:monthTx.filter(t=>t.action==="purchase"&&t.itemType==="snack").reduce((s,t)=>s+t.total,0),
+    essential:monthTx.filter(t=>t.action==="purchase"&&t.itemType==="essential").reduce((s,t)=>s+t.total,0),
+    topups:monthTx.filter(t=>t.action==="topup").reduce((s,t)=>s+t.total,0),
+    salary:monthTx.filter(t=>t.action==="salary").reduce((s,t)=>s+t.total,0),
+    txCount:monthTx.filter(t=>t.action==="purchase").length,
+  }),[monthTx]);
+  const monthSoldierSummary=useMemo(()=>{
+    const m={};monthTx.filter(t=>t.action==="purchase").forEach(t=>{
+      if(!m[t.soldierId])m[t.soldierId]={soldier:soldiers.find(s=>s.id===t.soldierId),total:0,snack:0,essential:0,count:0};
+      m[t.soldierId].total+=t.total;m[t.soldierId].count++;
+      if(t.itemType==="snack")m[t.soldierId].snack+=t.total;
+      else if(t.itemType==="essential")m[t.soldierId].essential+=t.total;
+    });return Object.values(m).sort((a,b)=>b.total-a.total);
+  },[monthTx,soldiers]);
+  const monthItemSummary=useMemo(()=>{
+    const m={};monthTx.filter(t=>t.action==="purchase"&&t.items).forEach(t=>t.items.forEach(i=>{
+      const k=i.name;if(!m[k])m[k]={name:i.name,emoji:i.emoji,type:i.type,qty:0,total:0};
+      m[k].qty+=i.qty;m[k].total+=i.price*i.qty;
+    }));return Object.values(m).sort((a,b)=>b.total-a.total);
+  },[monthTx]);
+
   const addToCart=item=>{if(!selSoldier)return notify("⚠️ เลือกทหารก่อน","error");setCart(p=>{const ex=p.find(c=>c.id===item.id);return ex?p.map(c=>c.id===item.id?{...c,qty:c.qty+1}:c):[...p,{...item,qty:1}]})};
   const removeFromCart=id=>setCart(p=>{const it=p.find(c=>c.id===id);return it?.qty>1?p.map(c=>c.id===id?{...c,qty:c.qty-1}:c):p.filter(c=>c.id!==id)});
 
@@ -214,7 +249,7 @@ function App(){
   const filteredSoldiers=soldiers.filter(s=>s.name.includes(search)||String(s.id).includes(search));
   const filteredMenu=useMemo(()=>{let m=menu;if(menuType!=="all")m=m.filter(x=>x.type===menuType);if(menuCat!=="ทั้งหมด")m=m.filter(x=>x.cat===menuCat);return m},[menu,menuType,menuCat]);
 
-  const NAV=[{key:"dashboard",icon:"📊",label:"แดชบอร์ด"},{key:"purchase",icon:"🛒",label:"ซื้อของ"},{key:"deposit",icon:"💰",label:"ฝากเงิน/ชำระหนี้"},{key:"soldiers",icon:"👥",label:"บัญชีทหาร"},{key:"history",icon:"📋",label:"ประวัติ"},{key:"settings",icon:"⚙️",label:"ตั้งค่า"}];
+  const NAV=[{key:"dashboard",icon:"📊",label:"แดชบอร์ด"},{key:"purchase",icon:"🛒",label:"ซื้อของ"},{key:"deposit",icon:"💰",label:"ฝากเงิน/ชำระหนี้"},{key:"soldiers",icon:"👥",label:"บัญชีทหาร"},{key:"history",icon:"📋",label:"ประวัติ"},{key:"report",icon:"📈",label:"สรุปยอด"},{key:"settings",icon:"⚙️",label:"ตั้งค่า"}];
 
   if(loading)return<div className="loading-screen"><div className="spinner"/><div style={{fontFamily:"'Kanit'",fontSize:16,color:"var(--gold)"}}>กำลังเชื่อมต่อ Firebase...</div></div>;
 
@@ -222,8 +257,8 @@ function App(){
     {toast&&<div className={`toast ${toast.type}`}>{toast.msg}</div>}
     {modal&&<div className="modal-overlay"><div className="modal-box"><h3 className="modal-title">{modal.title}</h3><p className="modal-msg">{modal.msg}</p><div className="modal-actions"><button className="btn-cancel" onClick={()=>setModal(null)}>ยกเลิก</button><button className="btn-confirm" onClick={modal.onConfirm}>ยืนยัน</button></div></div></div>}
 
-    <aside className={`sidebar ${sidebarOpen?"open":"closed"}`}><div className="sidebar-header"><div className="logo-area"><div className="logo-icon">🪖</div>{sidebarOpen&&<div><div className="logo-title">ระบบบัญชีค่าใช้จ่าย</div><div className="logo-sub">ช.1 พัน.52 • {N} นาย</div></div>}</div><button className="sidebar-toggle" onClick={()=>setSidebarOpen(!sidebarOpen)}>{sidebarOpen?"◀":"▶"}</button></div><nav className="sidebar-nav">{NAV.map(n=><button key={n.key} className={`nav-item ${page===n.key?"active":""}`} onClick={()=>setPage(n.key)}><span className="nav-icon">{n.icon}</span>{sidebarOpen&&<span className="nav-label">{n.label}</span>}</button>)}</nav>{sidebarOpen&&<div className="sidebar-footer"><div className="clock">{clock}</div><div className="sidebar-date">{fmtDate(new Date())}</div><div className={`sync-badge ${online?"online":"offline"}`}>{online?"🟢 Online — Synced":"🔴 Offline"}</div></div>}</aside>
-    <div className="mobile-nav"><div className="mobile-nav-inner">{NAV.map(n=><button key={n.key} className={`mobile-nav-btn ${page===n.key?"active":""}`} onClick={()=>setPage(n.key)}><span className="mn-icon">{n.icon}</span>{n.label}</button>)}</div></div>
+    <aside className={`sidebar ${sidebarOpen?"open":"closed"}`}><div className="sidebar-header"><div className="logo-area"><div className="logo-icon">🪖</div>{sidebarOpen&&<div><div className="logo-title">ระบบบัญชีค่าใช้จ่าย</div><div className="logo-sub">ช.1 พัน.52 • {N} นาย</div></div>}</div><button className="sidebar-toggle" onClick={()=>setSidebarOpen(!sidebarOpen)}>{sidebarOpen?"◀":"▶"}</button></div><nav className="sidebar-nav">{NAV.map(n=><button key={n.key} className={`nav-item ${page===n.key?"active":""}`} onClick={()=>{setPage(n.key);setDateConfirmed(false);setTxDate(todayISO())}}><span className="nav-icon">{n.icon}</span>{sidebarOpen&&<span className="nav-label">{n.label}</span>}</button>)}</nav>{sidebarOpen&&<div className="sidebar-footer"><div className="clock">{clock}</div><div className="sidebar-date">{fmtDate(new Date())}</div><div className={`sync-badge ${online?"online":"offline"}`}>{online?"🟢 Online — Synced":"🔴 Offline"}</div></div>}</aside>
+    <div className="mobile-nav"><div className="mobile-nav-inner">{NAV.map(n=><button key={n.key} className={`mobile-nav-btn ${page===n.key?"active":""}`} onClick={()=>{setPage(n.key);setDateConfirmed(false);setTxDate(todayISO())}}><span className="mn-icon">{n.icon}</span>{n.label}</button>)}</div></div>
 
     <main className="main-content">
       <header className="topbar"><div style={{display:"flex",alignItems:"center",gap:10}}><h1 className="page-title">{NAV.find(n=>n.key===page)?.icon} {NAV.find(n=>n.key===page)?.label}</h1><span className={`sync-badge ${online?"online":"offline"}`} style={{fontSize:9}}>{online?"🟢 Sync":"🔴"}</span></div><div className="topbar-right"><div className="mini-stat"><span className="mini-label">เงินฝากรวม</span><span className="mini-val green">฿{totalDeposits.toLocaleString()}</span></div><div className="mini-stat"><span className="mini-label">หนี้รวม</span><span className="mini-val red">฿{totalDebt.toLocaleString()}</span></div><div className="mini-stat"><span className="mini-label">จ่ายวันนี้</span><span className="mini-val orange">฿{todaySpent.toLocaleString()}</span></div></div></header>
@@ -246,25 +281,47 @@ function App(){
   <div className="card mt16"><div className="card-title">🕐 ล่าสุดวันนี้</div>{todayTx.length===0?<div className="empty-state"><p>ยังไม่มี</p></div>:<div className="tx-table-wrap" style={{maxHeight:300}}><table className="tx-table"><thead><tr><th>เวลา</th><th>ชื่อ</th><th>ประเภท</th><th>รายละเอียด</th><th>เงิน</th></tr></thead><tbody>{[...todayTx].reverse().slice(0,15).map((tx,i)=><tr key={i}><td style={{fontSize:11,color:"var(--text3)"}}>{tx.time}</td><td style={{fontWeight:600}}>{tx.soldierName}</td><td>{tx.action==="purchase"?tx.itemType==="snack"?<span className="tag-snack">ขนม</span>:tx.itemType==="essential"?<span className="tag-essential">ของจำเป็น</span>:<span className="tag-snack">รวม</span>:tx.action==="topup"?<span className="tag-topup">ฝากเงิน</span>:<span className="tag-salary">เงินเดือน</span>}</td><td style={{fontSize:11}}>{tx.items?tx.items.map(i=>`${i.emoji}${i.name}×${i.qty}`).join(", "):tx.note}</td><td style={{fontWeight:700,color:tx.action==="purchase"?"var(--orange)":"var(--green)"}}>{tx.action==="purchase"?`-฿${tx.total}`:`+฿${tx.total}`}</td></tr>)}</tbody></table></div>}</div>
 </div>}
 
-{page==="purchase"&&<div className="purchase-layout fade-in">
-  <div className="card"><div className="card-title">👤 เลือกทหาร</div><input className="search-input" placeholder="🔍 ค้นหา..." value={search} onChange={e=>setSearch(e.target.value)}/><div className="soldier-list">{filteredSoldiers.map(s=>{const b=getBal(s.id);return<button key={s.id} className={`soldier-btn ${selSoldier?.id===s.id?"selected":""} ${b<0?"debt":""}`} onClick={()=>{setSelSoldier(s);setCart([])}}><span className="sb-num">{String(s.id).padStart(2,"0")}</span><span className="sb-bal" style={{color:b<0?"var(--red)":b>0?"var(--green)":"var(--text3)"}}>฿{b}</span></button>})}</div>{selSoldier&&<div className="soldier-detail-card"><div className="sd-name">🎖️ {selSoldier.name}</div><div className="sd-row"><span className="sd-label">เงินฝาก</span><span className="sd-val" style={{color:getBal(selSoldier.id)>=0?"var(--green)":"var(--red)"}}>฿{getBal(selSoldier.id).toLocaleString()}</span></div><div className="sd-row"><span className="sd-label">สถานะ</span><span>{getBal(selSoldier.id)<0?<span className="badge red-bg">ติดหนี้</span>:getBal(selSoldier.id)>0?<span className="badge green-bg">มีเงินฝาก</span>:<span className="badge grey">ไม่มีฝาก</span>}</span></div></div>}</div>
+{page==="purchase"&&!dateConfirmed&&<div className="fade-in" style={{maxWidth:500,margin:"0 auto"}}>
+  <div className="card" style={{textAlign:"center",padding:30}}>
+    <div style={{fontSize:50,marginBottom:10}}>📅</div>
+    <div style={{fontFamily:"'Kanit'",fontSize:20,fontWeight:700,marginBottom:6}}>เลือกวันที่บันทึก</div>
+    <div style={{fontSize:13,color:"var(--text3)",marginBottom:20}}>กรุณาเลือกวันที่ก่อนเริ่มบันทึกรายการซื้อของ</div>
+    <input type="date" className="date-input" style={{width:"100%",fontSize:18,padding:"12px 16px",textAlign:"center",marginBottom:12}} value={txDate} onChange={e=>setTxDate(e.target.value)}/>
+    {txDate!==today&&<div style={{padding:"8px 12px",background:"rgba(245,158,11,.1)",border:"1px solid rgba(245,158,11,.25)",borderRadius:8,marginBottom:12,fontSize:13,color:"var(--gold)",fontWeight:600}}>⚠️ บันทึกย้อนหลัง — วันที่ {txDate}</div>}
+    {txDate===today&&<div style={{padding:"8px 12px",background:"rgba(16,185,129,.1)",border:"1px solid rgba(16,185,129,.25)",borderRadius:8,marginBottom:12,fontSize:13,color:"var(--green)",fontWeight:600}}>✅ วันนี้ — {txDate}</div>}
+    <button className="btn-green" style={{width:"100%",padding:14,fontSize:16}} onClick={()=>setDateConfirmed(true)}>เริ่มบันทึกรายการ →</button>
+  </div>
+</div>}
+
+{page==="purchase"&&dateConfirmed&&<div className="purchase-layout fade-in">
+  <div className="card"><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><div className="card-title" style={{margin:0}}>👤 เลือกทหาร</div><button style={{fontSize:10,padding:"3px 10px",border:"1px solid var(--border2)",borderRadius:6,background:"transparent",color:"var(--text3)",cursor:"pointer",fontFamily:"'Sarabun'"}} onClick={()=>{setDateConfirmed(false);setCart([]);setSelSoldier(null)}}>📅 เปลี่ยนวันที่</button></div>
+  <div style={{padding:"5px 8px",background:txDate!==today?"rgba(245,158,11,.1)":"rgba(16,185,129,.08)",borderRadius:6,marginBottom:8,fontSize:11,fontWeight:600,color:txDate!==today?"var(--gold)":"var(--green)",textAlign:"center"}}>{txDate!==today?`⚠️ ย้อนหลัง: ${txDate}`:`📅 วันนี้: ${txDate}`}</div>
+  <input className="search-input" placeholder="🔍 ค้นหา..." value={search} onChange={e=>setSearch(e.target.value)}/><div className="soldier-list">{filteredSoldiers.map(s=>{const b=getBal(s.id);return<button key={s.id} className={`soldier-btn ${selSoldier?.id===s.id?"selected":""} ${b<0?"debt":""}`} onClick={()=>{setSelSoldier(s);setCart([])}}><span className="sb-num">{String(s.id).padStart(2,"0")}</span><span className="sb-bal" style={{color:b<0?"var(--red)":b>0?"var(--green)":"var(--text3)"}}>฿{b}</span></button>})}</div>{selSoldier&&<div className="soldier-detail-card"><div className="sd-name">🎖️ {selSoldier.name}</div><div className="sd-row"><span className="sd-label">เงินฝาก</span><span className="sd-val" style={{color:getBal(selSoldier.id)>=0?"var(--green)":"var(--red)"}}>฿{getBal(selSoldier.id).toLocaleString()}</span></div><div className="sd-row"><span className="sd-label">สถานะ</span><span>{getBal(selSoldier.id)<0?<span className="badge red-bg">ติดหนี้</span>:getBal(selSoldier.id)>0?<span className="badge green-bg">มีเงินฝาก</span>:<span className="badge grey">ไม่มีฝาก</span>}</span></div></div>}</div>
   <div className="card"><div className="card-title">🛒 สินค้า</div><div className="cat-tabs">{TYPES.map(t=><button key={t.key} className={`cat-tab ${menuType===t.key?"active":""}`} onClick={()=>setMenuType(t.key)}>{t.label}</button>)}</div><div className="cat-tabs">{CATS.map(c=><button key={c} className={`cat-tab ${menuCat===c?"active":""}`} onClick={()=>setMenuCat(c)}>{c}</button>)}</div><div className="menu-grid">{filteredMenu.map(item=><button key={item.id||item._key} className={`menu-card ${item.type==="essential"?"essential":""}`} onClick={()=>addToCart(item)}><span className="mc-emoji">{item.emoji}</span><span className="mc-name">{item.name}</span><span className="mc-price">฿{item.price}</span><span style={{fontSize:8,color:item.type==="essential"?"var(--blue)":"var(--text3)"}}>{item.type==="essential"?"ของจำเป็น":"ขนม"}</span></button>)}</div></div>
   <div className="card"><div className="card-title">🧾 ตะกร้า {selSoldier?`— ${selSoldier.short}`:""}</div>
-    <div style={{marginBottom:8,padding:"6px 10px",background:txDate!==today?"rgba(245,158,11,.1)":"rgba(0,0,0,.1)",borderRadius:8,border:txDate!==today?"1px solid rgba(245,158,11,.3)":"1px solid var(--border)"}}>
-      <div style={{fontSize:10,color:"var(--text3)",marginBottom:3}}>📅 วันที่บันทึก {txDate!==today&&<span style={{color:"var(--gold)",fontWeight:700}}>(ย้อนหลัง)</span>}</div>
-      <input type="date" className="date-input" style={{width:"100%"}} value={txDate} onChange={e=>setTxDate(e.target.value)}/>
-      {txDate!==today&&<button style={{fontSize:10,color:"var(--blue)",background:"none",border:"none",cursor:"pointer",marginTop:3,textDecoration:"underline"}} onClick={()=>setTxDate(todayISO())}>กลับเป็นวันนี้</button>}
-    </div>
     {cart.length===0?<div className="empty-state"><span style={{fontSize:40}}>🛒</span><p>เลือกทหาร แล้วกดสินค้า</p></div>:<React.Fragment><div className="cart-items">{cart.map(c=><div key={c.id} className="cart-row"><span className="cr-name">{c.emoji} {c.name}</span><div className="cr-qty"><button className="qty-btn" onClick={()=>removeFromCart(c.id)}>−</button><span className="qty-num">{c.qty}</span><button className="qty-btn" onClick={()=>addToCart(c)}>+</button></div><span className="cr-price">฿{c.price*c.qty}</span></div>)}</div><div style={{marginTop:10,borderTop:"1px solid var(--border)",paddingTop:8}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"var(--text3)",marginBottom:4}}><span>ขนม</span><span>฿{cart.filter(c=>c.type==="snack").reduce((s,c)=>s+c.price*c.qty,0)}</span></div><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"var(--text3)",marginBottom:4}}><span>ของจำเป็น</span><span>฿{cart.filter(c=>c.type==="essential").reduce((s,c)=>s+c.price*c.qty,0)}</span></div><div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{fontWeight:600}}>รวม</span><span style={{fontFamily:"'Kanit'",fontSize:22,fontWeight:800,color:"var(--gold)"}}>฿{cartTotal}</span></div>{selSoldier&&<div style={{fontSize:11,color:"var(--text3)",marginBottom:6}}>หลังซื้อ: <span style={{fontWeight:700,color:getBal(selSoldier.id)-cartTotal<0?"var(--red)":"var(--green)"}}>฿{(getBal(selSoldier.id)-cartTotal).toLocaleString()}</span></div>}<button className="btn-green" style={{width:"100%",marginBottom:4}} onClick={confirmPurchase}>✅ ยืนยัน</button><button className="btn-cancel" style={{width:"100%",fontSize:11,padding:4,textAlign:"center"}} onClick={()=>setCart([])}>ล้าง</button></div></React.Fragment>}</div>
 </div>}
 
-{page==="deposit"&&<div className="fade-in" style={{maxWidth:800}}>
-  <div className="card" style={{marginBottom:12,padding:"12px 18px",background:txDate!==today?"rgba(245,158,11,.06)":"",border:txDate!==today?"1px solid rgba(245,158,11,.2)":"1px solid var(--border)",borderRadius:"var(--radius)"}}>
-    <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-      <span style={{fontSize:13,fontWeight:600}}>📅 วันที่บันทึก:</span>
-      <input type="date" className="date-input" value={txDate} onChange={e=>setTxDate(e.target.value)}/>
-      {txDate!==today&&<span className="badge gold-bg">⚠️ ย้อนหลัง</span>}
-      {txDate!==today&&<button style={{fontSize:11,color:"var(--blue)",background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}} onClick={()=>setTxDate(todayISO())}>กลับเป็นวันนี้</button>}
+{page==="deposit"&&!dateConfirmed&&<div className="fade-in" style={{maxWidth:500,margin:"0 auto"}}>
+  <div className="card" style={{textAlign:"center",padding:30}}>
+    <div style={{fontSize:50,marginBottom:10}}>📅</div>
+    <div style={{fontFamily:"'Kanit'",fontSize:20,fontWeight:700,marginBottom:6}}>เลือกวันที่บันทึก</div>
+    <div style={{fontSize:13,color:"var(--text3)",marginBottom:20}}>กรุณาเลือกวันที่ก่อนเริ่มบันทึกรายการฝากเงิน/ชำระหนี้</div>
+    <input type="date" className="date-input" style={{width:"100%",fontSize:18,padding:"12px 16px",textAlign:"center",marginBottom:12}} value={txDate} onChange={e=>setTxDate(e.target.value)}/>
+    {txDate!==today&&<div style={{padding:"8px 12px",background:"rgba(245,158,11,.1)",border:"1px solid rgba(245,158,11,.25)",borderRadius:8,marginBottom:12,fontSize:13,color:"var(--gold)",fontWeight:600}}>⚠️ บันทึกย้อนหลัง — วันที่ {txDate}</div>}
+    {txDate===today&&<div style={{padding:"8px 12px",background:"rgba(16,185,129,.1)",border:"1px solid rgba(16,185,129,.25)",borderRadius:8,marginBottom:12,fontSize:13,color:"var(--green)",fontWeight:600}}>✅ วันนี้ — {txDate}</div>}
+    <button className="btn-green" style={{width:"100%",padding:14,fontSize:16}} onClick={()=>setDateConfirmed(true)}>เริ่มบันทึกรายการ →</button>
+  </div>
+</div>}
+
+{page==="deposit"&&dateConfirmed&&<div className="fade-in" style={{maxWidth:800}}>
+  <div className="card" style={{marginBottom:12,padding:"10px 18px",background:txDate!==today?"rgba(245,158,11,.06)":"rgba(16,185,129,.04)",border:txDate!==today?"1px solid rgba(245,158,11,.2)":"1px solid rgba(16,185,129,.15)",borderRadius:"var(--radius)"}}>
+    <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",justifyContent:"space-between"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <span style={{fontSize:13,fontWeight:600}}>📅 วันที่บันทึก: <span style={{color:txDate!==today?"var(--gold)":"var(--green)"}}>{txDate}</span></span>
+        {txDate!==today&&<span className="badge gold-bg">ย้อนหลัง</span>}
+      </div>
+      <button style={{fontSize:11,padding:"4px 12px",border:"1px solid var(--border2)",borderRadius:6,background:"transparent",color:"var(--text3)",cursor:"pointer",fontFamily:"'Sarabun'"}} onClick={()=>{setDateConfirmed(false);setTxDate(todayISO())}}>📅 เปลี่ยนวันที่</button>
     </div>
   </div>
   <div className="card"><div className="card-title">💰 ฝากเงินรายคน</div><div className="form-row"><div className="form-field" style={{flex:2}}><label className="form-label">เลือกทหาร</label><select className="form-input" value={selSoldier?.id||""} onChange={e=>{const s=soldiers.find(x=>x.id===Number(e.target.value));setSelSoldier(s||null)}}><option value="">-- เลือก --</option>{soldiers.map(s=><option key={s.id} value={s.id}>{s.name} (฿{getBal(s.id)})</option>)}</select></div><div className="form-field"><label className="form-label">จำนวน (฿)</label><input className="form-input" type="number" placeholder="0" value={topupAmt} onChange={e=>setTopupAmt(e.target.value)}/></div><div className="form-field" style={{flex:2}}><label className="form-label">หมายเหตุ</label><input className="form-input" placeholder="ฝากค่าขนม" value={topupNote} onChange={e=>setTopupNote(e.target.value)}/></div><button className="btn-green" onClick={doTopup}>ฝากเงิน</button></div>{selSoldier&&<div style={{fontSize:13,color:"var(--text2)"}}>ปัจจุบัน: <span style={{fontWeight:700,color:getBal(selSoldier.id)>=0?"var(--green)":"var(--red)"}}>฿{getBal(selSoldier.id).toLocaleString()}</span></div>}</div>
@@ -275,6 +332,108 @@ function App(){
 {page==="soldiers"&&<div className="fade-in"><div className="card"><div className="card-title">👥 บัญชีทหาร {N} นาย</div><div className="tx-table-wrap" style={{maxHeight:600}}><table className="tx-table"><thead><tr><th>#</th><th>ชื่อ</th><th>เงินฝาก</th><th>ซื้อวันนี้</th><th>สถานะ</th></tr></thead><tbody>{soldiers.map(s=>{const b=getBal(s.id);const sp=todayTx.filter(t=>t.soldierId===s.id&&t.action==="purchase").reduce((x,t)=>x+t.total,0);return<tr key={s.id}><td>{s.id}</td><td style={{fontWeight:600}}>{s.name}</td><td style={{fontWeight:700,color:b>0?"var(--green)":b<0?"var(--red)":"var(--text3)"}}>฿{b.toLocaleString()}</td><td style={{color:sp>0?"var(--orange)":"var(--text3)"}}>฿{sp}</td><td>{b<0?<span className="badge red-bg">ติดหนี้ ฿{Math.abs(b)}</span>:b>0?<span className="badge green-bg">มีเงินฝาก</span>:<span className="badge grey">ไม่มีฝาก</span>}</td></tr>})}</tbody></table></div></div></div>}
 
 {page==="history"&&<div className="fade-in"><div className="card"><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:12}}><div className="card-title" style={{margin:0}}>📋 ประวัติ</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="date" className="date-input" value={dateFilter} onChange={e=>setDateFilter(e.target.value)}/><span style={{fontSize:12,color:"var(--text3)"}}>{dayTx.length} รายการ</span></div></div>{dayTx.length===0?<div className="empty-state" style={{padding:40}}><span style={{fontSize:50}}>📭</span><p>ไม่มี</p></div>:<div className="tx-table-wrap"><table className="tx-table"><thead><tr><th>#</th><th>เวลา</th><th>ชื่อ</th><th>ประเภท</th><th>รายละเอียด</th><th>เงิน</th><th></th></tr></thead><tbody>{[...dayTx].reverse().map((tx,idx)=><tr key={idx}><td>{dayTx.length-idx}</td><td style={{fontSize:11,color:"var(--text3)"}}>{tx.time}</td><td style={{fontWeight:600}}>{tx.soldierName}</td><td>{tx.action==="purchase"?tx.itemType==="snack"?<span className="tag-snack">ขนม</span>:tx.itemType==="essential"?<span className="tag-essential">ของจำเป็น</span>:<span className="tag-snack">รวม</span>:tx.action==="topup"?<span className="tag-topup">ฝากเงิน</span>:<span className="tag-salary">เงินเดือน</span>}</td><td style={{fontSize:11}}>{tx.items?tx.items.map(i=>`${i.emoji}${i.name}×${i.qty}`).join(", "):tx.note}</td><td style={{fontWeight:700,color:tx.action==="purchase"?"var(--red)":"var(--green)"}}>{tx.action==="purchase"?`-฿${tx.total}`:`+฿${tx.total}`}</td><td><button className="btn-del-sm" onClick={()=>setModal({title:"ลบ",msg:"ลบรายการนี้?",onConfirm:()=>{if(tx._key)fbRemove(`transactions/${tx._key}`);setModal(null);notify("🗑️ ลบแล้ว")}})}>🗑️</button></td></tr>)}</tbody></table></div>}</div></div>}
+
+{page==="report"&&<div className="fade-in">
+  {/* Month Selector */}
+  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,marginBottom:16}}>
+    <div style={{display:"flex",alignItems:"center",gap:8}}>
+      <span style={{fontFamily:"'Kanit'",fontSize:16,fontWeight:700}}>📈 สรุปยอดประจำเดือน</span>
+    </div>
+    <input type="month" className="date-input" value={reportMonth} onChange={e=>setReportMonth(e.target.value)} style={{fontSize:14,padding:"8px 14px"}}/>
+  </div>
+
+  {/* Monthly Overview Cards */}
+  <div className="stat-grid">
+    <div className="dash-card accent-orange"><div className="dc-icon">🛒</div><div><div className="dc-label">ซื้อของทั้งเดือน</div><div className="dc-val" style={{color:"var(--orange)"}}>฿{monthTotal.purchases.toLocaleString()}</div></div></div>
+    <div className="dash-card accent-gold"><div className="dc-icon">🍿</div><div><div className="dc-label">ขนม</div><div className="dc-val" style={{color:"var(--gold)"}}>฿{monthTotal.snack.toLocaleString()}</div></div></div>
+    <div className="dash-card accent-blue"><div className="dc-icon">🧴</div><div><div className="dc-label">ของจำเป็น</div><div className="dc-val" style={{color:"var(--blue)"}}>฿{monthTotal.essential.toLocaleString()}</div></div></div>
+    <div className="dash-card accent-green"><div className="dc-icon">💰</div><div><div className="dc-label">ฝากเงิน</div><div className="dc-val" style={{color:"var(--green)"}}>฿{monthTotal.topups.toLocaleString()}</div></div></div>
+    <div className="dash-card accent-purple"><div className="dc-icon">💸</div><div><div className="dc-label">หักเงินเดือน</div><div className="dc-val" style={{color:"var(--purple)"}}>฿{monthTotal.salary.toLocaleString()}</div></div></div>
+    <div className="dash-card accent-red"><div className="dc-icon">📊</div><div><div className="dc-label">จำนวนรายการซื้อ</div><div className="dc-val" style={{color:"var(--text1)"}}>{monthTotal.txCount} รายการ</div></div></div>
+  </div>
+
+  {/* Daily Breakdown Table */}
+  <div className="card mt16">
+    <div className="card-title">📅 สรุปรายวัน</div>
+    {dailySummary.length===0?<div className="empty-state"><p>ไม่มีข้อมูลในเดือนนี้</p></div>:
+    <div className="tx-table-wrap"><table className="tx-table">
+      <thead><tr><th>วันที่</th><th>ซื้อของ</th><th>🍿 ขนม</th><th>🧴 ของจำเป็น</th><th>ฝากเงิน</th><th>หักเงินเดือน</th><th>รายการ</th></tr></thead>
+      <tbody>
+        {dailySummary.map(d=><tr key={d.date}>
+          <td style={{fontWeight:600}}>{d.date}</td>
+          <td style={{color:"var(--orange)",fontWeight:700}}>฿{d.purchases.toLocaleString()}</td>
+          <td style={{color:"var(--gold)"}}>฿{d.snack.toLocaleString()}</td>
+          <td style={{color:"var(--blue)"}}>฿{d.essential.toLocaleString()}</td>
+          <td style={{color:"var(--green)"}}>{d.topups>0?`+฿${d.topups.toLocaleString()}`:"-"}</td>
+          <td style={{color:"var(--purple)"}}>{d.salary>0?`+฿${d.salary.toLocaleString()}`:"-"}</td>
+          <td>{d.txCount}</td>
+        </tr>)}
+        <tr style={{background:"rgba(245,158,11,.06)",fontWeight:700}}>
+          <td style={{fontFamily:"'Kanit'"}}>รวมทั้งเดือน</td>
+          <td style={{color:"var(--orange)"}}>฿{monthTotal.purchases.toLocaleString()}</td>
+          <td style={{color:"var(--gold)"}}>฿{monthTotal.snack.toLocaleString()}</td>
+          <td style={{color:"var(--blue)"}}>฿{monthTotal.essential.toLocaleString()}</td>
+          <td style={{color:"var(--green)"}}>{monthTotal.topups>0?`+฿${monthTotal.topups.toLocaleString()}`:"-"}</td>
+          <td style={{color:"var(--purple)"}}>{monthTotal.salary>0?`+฿${monthTotal.salary.toLocaleString()}`:"-"}</td>
+          <td>{monthTotal.txCount}</td>
+        </tr>
+      </tbody>
+    </table></div>}
+  </div>
+
+  <div className="grid-2 mt16">
+    {/* Top Spenders of Month */}
+    <div className="card">
+      <div className="card-title">🏆 ใช้จ่ายมากสุดในเดือน (Top 10)</div>
+      {monthSoldierSummary.length===0?<div className="empty-state"><p>ไม่มีข้อมูล</p></div>:
+      <div className="tx-table-wrap" style={{maxHeight:400}}><table className="tx-table">
+        <thead><tr><th>#</th><th>ชื่อ</th><th>รวม</th><th>ขนม</th><th>ของจำเป็น</th><th>ครั้ง</th></tr></thead>
+        <tbody>{monthSoldierSummary.slice(0,10).map((e,i)=><tr key={i}>
+          <td>{i===0?"🥇":i===1?"🥈":i===2?"🥉":i+1}</td>
+          <td style={{fontWeight:600,fontSize:11}}>{e.soldier?.name}</td>
+          <td style={{color:"var(--orange)",fontWeight:700}}>฿{e.total.toLocaleString()}</td>
+          <td style={{color:"var(--gold)",fontSize:11}}>฿{e.snack.toLocaleString()}</td>
+          <td style={{color:"var(--blue)",fontSize:11}}>฿{e.essential.toLocaleString()}</td>
+          <td>{e.count}</td>
+        </tr>)}</tbody>
+      </table></div>}
+    </div>
+
+    {/* Popular Items of Month */}
+    <div className="card">
+      <div className="card-title">🔥 สินค้าขายดีในเดือน</div>
+      {monthItemSummary.length===0?<div className="empty-state"><p>ไม่มีข้อมูล</p></div>:
+      <div className="tx-table-wrap" style={{maxHeight:400}}><table className="tx-table">
+        <thead><tr><th>สินค้า</th><th>ประเภท</th><th>จำนวน</th><th>ยอดขาย</th></tr></thead>
+        <tbody>{monthItemSummary.map((item,i)=><tr key={i}>
+          <td style={{fontWeight:600}}>{item.emoji} {item.name}</td>
+          <td>{item.type==="essential"?<span className="badge blue-bg">ของจำเป็น</span>:<span className="badge gold-bg">ขนม</span>}</td>
+          <td>{item.qty} ชิ้น</td>
+          <td style={{color:"var(--gold)",fontWeight:700}}>฿{item.total.toLocaleString()}</td>
+        </tr>)}</tbody>
+      </table></div>}
+    </div>
+  </div>
+
+  {/* Full Soldier Summary for Month */}
+  <div className="card mt16">
+    <div className="card-title">📋 สรุปรายคนทั้งเดือน (ทั้ง {N} นาย)</div>
+    <div className="tx-table-wrap" style={{maxHeight:500}}><table className="tx-table">
+      <thead><tr><th>#</th><th>ชื่อ</th><th>ซื้อทั้งเดือน</th><th>ขนม</th><th>ของจำเป็น</th><th>เงินฝากปัจจุบัน</th></tr></thead>
+      <tbody>{soldiers.map(s=>{
+        const row=monthSoldierSummary.find(x=>x.soldier?.id===s.id);
+        const spent=row?row.total:0;const snk=row?row.snack:0;const ess=row?row.essential:0;
+        return<tr key={s.id}>
+          <td>{s.id}</td>
+          <td style={{fontWeight:600,fontSize:11}}>{s.name}</td>
+          <td style={{color:spent>0?"var(--orange)":"var(--text3)",fontWeight:spent>0?700:400}}>฿{spent.toLocaleString()}</td>
+          <td style={{color:snk>0?"var(--gold)":"var(--text3)",fontSize:11}}>฿{snk.toLocaleString()}</td>
+          <td style={{color:ess>0?"var(--blue)":"var(--text3)",fontSize:11}}>฿{ess.toLocaleString()}</td>
+          <td style={{fontWeight:700,color:getBal(s.id)>0?"var(--green)":getBal(s.id)<0?"var(--red)":"var(--text3)"}}>฿{getBal(s.id).toLocaleString()}</td>
+        </tr>})}</tbody>
+    </table></div>
+  </div>
+</div>}
 
 {page==="settings"&&<div className="fade-in" style={{maxWidth:700}}>
   <div className="card"><div className="card-title">🍿 สินค้า ({menu.length})</div><button className="btn-outline-gold" style={{marginBottom:10}} onClick={()=>setShowAddMenu(!showAddMenu)}>+ เพิ่มสินค้า</button>
