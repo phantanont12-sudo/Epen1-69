@@ -329,7 +329,102 @@ function App(){
   <div className="card mt16"><div className="card-title">⚠️ ชำระหนี้ ({debtors.length} นาย ฿{totalDebt.toLocaleString()})</div>{debtors.length===0?<div className="empty-state"><p>ไม่มี</p></div>:<React.Fragment><button className="btn-danger" style={{marginBottom:10}} onClick={()=>{if(!debtors.length)return;setModal({title:"หักเงินเดือนทั้งหมด",msg:`${debtors.length} นาย ฿${totalDebt.toLocaleString()}`,onConfirm:()=>{const u={};debtors.forEach(s=>{u[`balances/${s.id}`]=0;fbPush("transactions",{soldierId:s.id,soldierName:s.name,action:"salary",total:Math.abs(getBal(s.id)),note:"หักเงินเดือน",date:txDate,time:fmtTime()})});db.ref().update(u);setModal(null);notify(`✅ ชำระ ${debtors.length} นาย`)}})}}>หักทั้งหมด</button><div className="tx-table-wrap"><table className="tx-table"><thead><tr><th>#</th><th>ชื่อ</th><th>หนี้</th><th></th></tr></thead><tbody>{debtors.map(s=><tr key={s.id}><td>{s.id}</td><td>{s.name}</td><td style={{color:"var(--red)",fontWeight:700}}>฿{Math.abs(getBal(s.id)).toLocaleString()}</td><td><button className="btn-outline-gold" style={{fontSize:10,padding:"2px 8px"}} onClick={()=>doSalaryPayback(s)}>หักเงินเดือน</button></td></tr>)}</tbody></table></div></React.Fragment>}</div>
 </div>}
 
-{page==="soldiers"&&<div className="fade-in"><div className="card"><div className="card-title">👥 บัญชีทหาร {N} นาย</div><div className="tx-table-wrap" style={{maxHeight:600}}><table className="tx-table"><thead><tr><th>#</th><th>ชื่อ</th><th>เงินฝาก</th><th>ซื้อวันนี้</th><th>สถานะ</th></tr></thead><tbody>{soldiers.map(s=>{const b=getBal(s.id);const sp=todayTx.filter(t=>t.soldierId===s.id&&t.action==="purchase").reduce((x,t)=>x+t.total,0);return<tr key={s.id}><td>{s.id}</td><td style={{fontWeight:600}}>{s.name}</td><td style={{fontWeight:700,color:b>0?"var(--green)":b<0?"var(--red)":"var(--text3)"}}>฿{b.toLocaleString()}</td><td style={{color:sp>0?"var(--orange)":"var(--text3)"}}>฿{sp}</td><td>{b<0?<span className="badge red-bg">ติดหนี้ ฿{Math.abs(b)}</span>:b>0?<span className="badge green-bg">มีเงินฝาก</span>:<span className="badge grey">ไม่มีฝาก</span>}</td></tr>})}</tbody></table></div></div></div>}
+{page==="soldiers"&&<div className="fade-in">
+  {/* Soldier selector */}
+  <div className="card" style={{marginBottom:14}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:10}}>
+      <div className="card-title" style={{margin:0}}>👥 บัญชีทหาร {N} นาย — เลือกดูรายจ่ายรายคน</div>
+      <div style={{display:"flex",gap:6,alignItems:"center"}}>
+        <input className="search-input" style={{margin:0,width:180}} placeholder="🔍 ค้นหาชื่อ/ลำดับ" value={search} onChange={e=>setSearch(e.target.value)}/>
+      </div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:4,maxHeight:200,overflow:"auto"}}>
+      {filteredSoldiers.map(s=>{const b=getBal(s.id);return<button key={s.id} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",border:selSoldier?.id===s.id?"1px solid var(--gold)":"1px solid var(--border)",borderRadius:6,background:selSoldier?.id===s.id?"rgba(245,158,11,.12)":"rgba(0,0,0,.2)",color:"var(--text1)",cursor:"pointer",fontFamily:"'Sarabun'",fontSize:11,textAlign:"left"}} onClick={()=>setSelSoldier(s)}>
+        <span style={{fontWeight:700,minWidth:20}}>{s.id}</span>
+        <span style={{flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.short}</span>
+        <span style={{fontWeight:700,fontSize:10,color:b<0?"var(--red)":b>0?"var(--green)":"var(--text3)"}}>฿{b}</span>
+      </button>})}
+    </div>
+  </div>
+
+  {/* Selected soldier detail */}
+  {selSoldier?(()=>{
+    const sid=selSoldier.id;
+    const allTx=transactions.filter(t=>t.soldierId===sid).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+    const byDate={};allTx.forEach(t=>{if(!byDate[t.date])byDate[t.date]=[];byDate[t.date].push(t)});
+    const dates=Object.keys(byDate).sort();
+    const totalPurchased=allTx.filter(t=>t.action==="purchase").reduce((s,t)=>s+t.total,0);
+    const totalTopup=allTx.filter(t=>t.action==="topup").reduce((s,t)=>s+t.total,0);
+    const totalSalary=allTx.filter(t=>t.action==="salary").reduce((s,t)=>s+t.total,0);
+    const totalSnack=allTx.filter(t=>t.action==="purchase"&&t.itemType==="snack").reduce((s,t)=>s+t.total,0);
+    const totalEss=allTx.filter(t=>t.action==="purchase"&&t.itemType==="essential").reduce((s,t)=>s+t.total,0);
+    const initBal=INIT_BALANCES[sid]||0;
+    const totalAllDeposits=initBal+totalTopup;
+
+    return<React.Fragment>
+      {/* Summary Card */}
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:10}}>
+          <div style={{fontFamily:"'Kanit'",fontSize:18,fontWeight:700}}>🎖️ {selSoldier.name}</div>
+          <div style={{fontWeight:700,fontSize:18,color:getBal(sid)>=0?"var(--green)":"var(--red)"}}>คงเหลือ: ฿{getBal(sid).toLocaleString()}</div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:8}}>
+          <div style={{padding:"8px 12px",background:"rgba(16,185,129,.08)",borderRadius:8,border:"1px solid rgba(16,185,129,.12)"}}>
+            <div style={{fontSize:10,color:"var(--text3)"}}>💰 ฝากเงินทั้งหมด</div>
+            <div style={{fontFamily:"'Kanit'",fontSize:18,fontWeight:700,color:"var(--green)"}}>฿{totalAllDeposits.toLocaleString()}</div>
+            <div style={{fontSize:9,color:"var(--text3)"}}>(เริ่มต้น ฿{initBal.toLocaleString()}{totalTopup>0?` + ฝากเพิ่ม ฿${totalTopup.toLocaleString()}`:""})</div>
+          </div>
+          <div style={{padding:"8px 12px",background:"rgba(249,115,22,.08)",borderRadius:8,border:"1px solid rgba(249,115,22,.12)"}}>
+            <div style={{fontSize:10,color:"var(--text3)"}}>ซื้อทั้งหมด</div>
+            <div style={{fontFamily:"'Kanit'",fontSize:18,fontWeight:700,color:"var(--orange)"}}>฿{totalPurchased.toLocaleString()}</div>
+          </div>
+          <div style={{padding:"8px 12px",background:"rgba(245,158,11,.08)",borderRadius:8,border:"1px solid rgba(245,158,11,.12)"}}>
+            <div style={{fontSize:10,color:"var(--text3)"}}>🍿 ขนม</div>
+            <div style={{fontFamily:"'Kanit'",fontSize:18,fontWeight:700,color:"var(--gold)"}}>฿{totalSnack.toLocaleString()}</div>
+          </div>
+          <div style={{padding:"8px 12px",background:"rgba(59,130,246,.08)",borderRadius:8,border:"1px solid rgba(59,130,246,.12)"}}>
+            <div style={{fontSize:10,color:"var(--text3)"}}>🧴 ของจำเป็น</div>
+            <div style={{fontFamily:"'Kanit'",fontSize:18,fontWeight:700,color:"var(--blue)"}}>฿{totalEss.toLocaleString()}</div>
+          </div>
+          <div style={{padding:"8px 12px",background:"rgba(168,85,247,.08)",borderRadius:8,border:"1px solid rgba(168,85,247,.12)"}}>
+            <div style={{fontSize:10,color:"var(--text3)"}}>หักเงินเดือน</div>
+            <div style={{fontFamily:"'Kanit'",fontSize:18,fontWeight:700,color:"var(--purple)"}}>฿{totalSalary.toLocaleString()}</div>
+          </div>
+          <div style={{padding:"8px 12px",background:"rgba(100,116,139,.08)",borderRadius:8,border:"1px solid rgba(100,116,139,.12)"}}>
+            <div style={{fontSize:10,color:"var(--text3)"}}>จำนวนวันที่ซื้อ</div>
+            <div style={{fontFamily:"'Kanit'",fontSize:18,fontWeight:700,color:"var(--text1)"}}>{dates.filter(d=>byDate[d].some(t=>t.action==="purchase")).length} วัน</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Daily Breakdown */}
+      {dates.length===0?<div className="card"><div className="empty-state"><span style={{fontSize:50}}>📭</span><p>ยังไม่มีรายการ</p></div></div>:
+      dates.slice().reverse().map(date=>{
+        const txs=byDate[date];
+        const dayPurchase=txs.filter(t=>t.action==="purchase").reduce((s,t)=>s+t.total,0);
+        const dayTopup=txs.filter(t=>t.action==="topup").reduce((s,t)=>s+t.total,0);
+        const daySalary=txs.filter(t=>t.action==="salary").reduce((s,t)=>s+t.total,0);
+        return<div key={date} className="card" style={{marginBottom:8}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6,marginBottom:8}}>
+            <div style={{fontFamily:"'Kanit'",fontSize:14,fontWeight:700}}>📅 {date}</div>
+            <div style={{display:"flex",gap:10,fontSize:12}}>
+              {dayPurchase>0&&<span style={{color:"var(--orange)",fontWeight:700}}>ซื้อ -฿{dayPurchase.toLocaleString()}</span>}
+              {dayTopup>0&&<span style={{color:"var(--green)",fontWeight:700}}>ฝาก +฿{dayTopup.toLocaleString()}</span>}
+              {daySalary>0&&<span style={{color:"var(--purple)",fontWeight:700}}>เงินเดือน +฿{daySalary.toLocaleString()}</span>}
+            </div>
+          </div>
+          <table className="tx-table"><thead><tr><th>เวลา</th><th>ประเภท</th><th>รายละเอียด</th><th>จำนวน</th></tr></thead>
+          <tbody>{txs.map((tx,i)=><tr key={i}>
+            <td style={{fontSize:11,color:"var(--text3)"}}>{tx.time}</td>
+            <td>{tx.action==="purchase"?tx.itemType==="snack"?<span className="tag-snack">ขนม</span>:tx.itemType==="essential"?<span className="tag-essential">ของจำเป็น</span>:<span className="tag-snack">รวม</span>:tx.action==="topup"?<span className="tag-topup">ฝากเงิน</span>:<span className="tag-salary">เงินเดือน</span>}</td>
+            <td style={{fontSize:11}}>{tx.items?tx.items.map(it=>`${it.emoji}${it.name}×${it.qty}`).join(", "):tx.note}</td>
+            <td style={{fontWeight:700,color:tx.action==="purchase"?"var(--red)":"var(--green)"}}>{tx.action==="purchase"?`-฿${tx.total}`:`+฿${tx.total}`}</td>
+          </tr>)}</tbody></table>
+        </div>
+      })}
+    </React.Fragment>
+  })():<div className="card"><div className="empty-state" style={{padding:50}}><span style={{fontSize:60}}>👆</span><p style={{fontSize:15,marginTop:12}}>เลือกทหารด้านบนเพื่อดูรายจ่ายทั้งหมด</p></div></div>}
+</div>}
 
 {page==="history"&&<div className="fade-in"><div className="card"><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:12}}><div className="card-title" style={{margin:0}}>📋 ประวัติ</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="date" className="date-input" value={dateFilter} onChange={e=>setDateFilter(e.target.value)}/><span style={{fontSize:12,color:"var(--text3)"}}>{dayTx.length} รายการ</span></div></div>{dayTx.length===0?<div className="empty-state" style={{padding:40}}><span style={{fontSize:50}}>📭</span><p>ไม่มี</p></div>:<div className="tx-table-wrap"><table className="tx-table"><thead><tr><th>#</th><th>เวลา</th><th>ชื่อ</th><th>ประเภท</th><th>รายละเอียด</th><th>เงิน</th><th></th></tr></thead><tbody>{[...dayTx].reverse().map((tx,idx)=><tr key={idx}><td>{dayTx.length-idx}</td><td style={{fontSize:11,color:"var(--text3)"}}>{tx.time}</td><td style={{fontWeight:600}}>{tx.soldierName}</td><td>{tx.action==="purchase"?tx.itemType==="snack"?<span className="tag-snack">ขนม</span>:tx.itemType==="essential"?<span className="tag-essential">ของจำเป็น</span>:<span className="tag-snack">รวม</span>:tx.action==="topup"?<span className="tag-topup">ฝากเงิน</span>:<span className="tag-salary">เงินเดือน</span>}</td><td style={{fontSize:11}}>{tx.items?tx.items.map(i=>`${i.emoji}${i.name}×${i.qty}`).join(", "):tx.note}</td><td style={{fontWeight:700,color:tx.action==="purchase"?"var(--red)":"var(--green)"}}>{tx.action==="purchase"?`-฿${tx.total}`:`+฿${tx.total}`}</td><td><button className="btn-del-sm" onClick={()=>setModal({title:"ลบ",msg:"ลบรายการนี้?",onConfirm:()=>{if(tx._key)fbRemove(`transactions/${tx._key}`);setModal(null);notify("🗑️ ลบแล้ว")}})}>🗑️</button></td></tr>)}</tbody></table></div>}</div></div>}
 
@@ -441,9 +536,23 @@ function App(){
     <div className="tx-table-wrap" style={{maxHeight:400}}><table className="tx-table"><thead><tr><th>สินค้า</th><th>ราคา</th><th>หมวด</th><th>ประเภท</th><th></th></tr></thead><tbody>{menu.map(item=><tr key={item.id||item._key}><td>{item.emoji} {item.name}</td><td style={{color:"var(--gold)",fontWeight:700}}>฿{item.price}</td><td><span className="badge grey">{item.cat}</span></td><td>{item.type==="essential"?<span className="badge blue-bg">ของจำเป็น</span>:<span className="badge gold-bg">ขนม</span>}</td><td><button className="btn-del-sm" onClick={()=>setModal({title:"ลบ",msg:`ลบ "${item.name}"?`,onConfirm:()=>{if(item._key)fbRemove(`menu/${item._key}`);else db.ref(`menu/${item.id}`).remove();setModal(null);notify("🗑️ ลบแล้ว")}})}>🗑️</button></td></tr>)}</tbody></table></div>
   </div>
   <div className="card mt16"><div className="card-title">🗃️ จัดการข้อมูล</div>
+    <div className="setting-row" style={{background:"rgba(16,185,129,.04)",borderRadius:8,padding:"12px",margin:"0 0 8px 0",border:"1px solid rgba(16,185,129,.15)"}}>
+      <div><span className="setting-label" style={{color:"var(--green)",fontWeight:700}}>🔄 คำนวณยอดเงินใหม่</span><div style={{fontSize:11,color:"var(--text3)",marginTop:2}}>คิดจากยอดฝากเริ่มต้น (PDF) + หักรายการซื้อ + บวกฝากเพิ่ม<br/>รายการซื้อทั้งหมดไม่หาย — แก้ยอดเงินให้ถูกต้อง</div></div>
+      <button className="btn-green" onClick={()=>setModal({title:"🔄 คำนวณยอดเงินใหม่",msg:"ระบบจะคิดยอดเงินใหม่จาก:\n\n1. ยอดเงินฝากเริ่มต้น (จาก PDF ฿42,193)\n2. หักรายการซื้อทั้งหมดที่ลงไว้\n3. บวกรายการฝากเงินเพิ่ม\n4. บวกรายการหักเงินเดือน\n\n✅ รายการซื้อทั้งหมดไม่หาย\n✅ ยอดเงินจะถูกต้อง 100%",onConfirm:()=>{
+        const newBal={...INIT_BALANCES};
+        transactions.forEach(t=>{
+          const id=t.soldierId;
+          if(!newBal[id])newBal[id]=0;
+          if(t.action==="purchase")newBal[id]-=t.total;
+          else if(t.action==="topup")newBal[id]+=t.total;
+          else if(t.action==="salary")newBal[id]+=t.total;
+        });
+        db.ref("balances").set(newBal);setModal(null);notify("✅ คำนวณยอดเงินใหม่สำเร็จ!");
+      }})}>คำนวณใหม่</button>
+    </div>
     <div className="setting-row"><span className="setting-label">🗑️ ล้างรายการวันนี้</span><button className="btn-danger" onClick={()=>setModal({title:"ล้างวันนี้",msg:"ล้างรายการวันนี้?",onConfirm:()=>{todayTx.forEach(tx=>{if(tx._key)fbRemove(`transactions/${tx._key}`)});setModal(null);notify("✅ ล้างแล้ว")}})}>ล้างวันนี้</button></div>
-    <div className="setting-row"><span className="setting-label">⚠️ รีเซ็ตยอดเงิน</span><button className="btn-danger" onClick={()=>setModal({title:"รีเซ็ต",msg:"ตั้งเป็น ฿0 ทุกคน?",onConfirm:()=>{db.ref("balances").remove();setModal(null);notify("✅ รีเซ็ตแล้ว")}})}>รีเซ็ต</button></div>
-    <div className="setting-row"><span className="setting-label">⚠️ ล้างทั้งหมด</span><button className="btn-danger" onClick={()=>setModal({title:"ล้างทั้งหมด",msg:"ลบทุกอย่าง?",onConfirm:()=>{db.ref("transactions").remove();db.ref("balances").remove();setModal(null);notify("✅ ล้างแล้ว")}})}>ล้างทั้งหมด</button></div>
+    <div className="setting-row"><span className="setting-label">⚠️ รีเซ็ตยอดเงินเป็นตาม PDF</span><button className="btn-danger" onClick={()=>setModal({title:"รีเซ็ต",msg:"ตั้งยอดเงินกลับเป็นตาม PDF (฿42,193) โดยไม่คิดรายการซื้อ?\n\n⚠️ รายการซื้อยังอยู่แต่ยอดเงินจะไม่ตรง\nแนะนำใช้ปุ่ม 'คำนวณใหม่' แทน",onConfirm:()=>{db.ref("balances").set(INIT_BALANCES);setModal(null);notify("✅ รีเซ็ตตาม PDF แล้ว")}})}>รีเซ็ต</button></div>
+    <div className="setting-row"><span className="setting-label">⚠️ ล้างทั้งหมด (รายการซื้อจะหายหมด!)</span><button className="btn-danger" onClick={()=>setModal({title:"⚠️ ล้างทั้งหมด",msg:"ลบรายการซื้อ + ยอดเงินทั้งหมด?\n\n❌ รายการซื้อจะหายหมด!\n❌ ไม่สามารถกู้คืนได้!\n\nยอดเงินจะกลับเป็นตาม PDF",onConfirm:()=>{db.ref("transactions").remove();db.ref("balances").remove();setModal(null);notify("✅ ล้างทั้งหมดแล้ว")}})}>ล้างทั้งหมด</button></div>
   </div>
 </div>}
       </div>
