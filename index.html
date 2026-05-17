@@ -156,7 +156,7 @@ function App(){
   const[sidebarOpen,setSidebarOpen]=useState(true);
   const[clock,setClock]=useState(fmtTime());
   const[topupAmt,setTopupAmt]=useState("");
-  const[topupNote,setTopupNote]=useState("");
+  const[depositType,setDepositType]=useState("snack");
   const[showAddMenu,setShowAddMenu]=useState(false);
   const[newItem,setNewItem]=useState({name:"",price:"",emoji:"🍪",cat:"ขนม",type:"snack"});
   const[batchAmt,setBatchAmt]=useState("");
@@ -237,14 +237,15 @@ function App(){
 
   const doTopup=()=>{if(!selSoldier||!topupAmt)return;const amt=Number(topupAmt);if(amt<=0)return notify("กรอกจำนวน","error");
     db.ref(`balances/${selSoldier.id}`).set((balances[selSoldier.id]||0)+amt);
-    fbPush("transactions",{soldierId:selSoldier.id,soldierName:selSoldier.name,action:"topup",total:amt,note:topupNote||"ฝากเงิน",date:txDate,time:fmtTime()});
-    setTopupAmt("");setTopupNote("");notify(`✅ ฝาก ${selSoldier.name} ฿${amt}${txDate!==today?` (${txDate})`:""}`)};
+    fbPush("transactions",{soldierId:selSoldier.id,soldierName:selSoldier.name,action:"topup",total:amt,depositType:depositType,note:depositType==="snack"?"ฝากค่าขนม":"ฝากค่าของจำเป็น",date:txDate,time:fmtTime()});
+    setTopupAmt("");notify(`✅ ฝาก${depositType==="snack"?"ค่าขนม":"ค่าของจำเป็น"} ${selSoldier.name} ฿${amt}${txDate!==today?` (${txDate})`:""}`)};
 
   const doSalaryPayback=s=>{const d=Math.abs(getBal(s.id));if(d<=0)return notify("ไม่มีหนี้","info");
     setModal({title:"หักเงินเดือน",msg:`${s.name}\nหนี้: ฿${d}`,onConfirm:()=>{db.ref(`balances/${s.id}`).set(0);fbPush("transactions",{soldierId:s.id,soldierName:s.name,action:"salary",total:d,note:"หักเงินเดือน",date:txDate,time:fmtTime()});setModal(null);notify(`✅ ชำระ ${s.name} ฿${d}`)}})};
 
   const doBatchDeposit=()=>{const amt=Number(batchAmt);if(!amt||amt<=0)return notify("กรอกจำนวน","error");
-    setModal({title:"ฝากทั้งหมด",msg:`฿${amt} × ${N} = ฿${(amt*N).toLocaleString()}${txDate!==today?`\n📅 บันทึกวันที่: ${txDate}`:""}`,onConfirm:()=>{const u={};soldiers.forEach(s=>{u[`balances/${s.id}`]=(balances[s.id]||0)+amt});db.ref().update(u);soldiers.forEach(s=>fbPush("transactions",{soldierId:s.id,soldierName:s.name,action:"topup",total:amt,note:`ฝากรอบ ฿${amt}`,date:txDate,time:fmtTime()}));setBatchAmt("");setModal(null);notify(`✅ ฝาก ฿${amt}×${N}`)}})};
+    const label=depositType==="snack"?"ค่าขนม":"ค่าของจำเป็น";
+    setModal({title:`ฝาก${label}ทั้งหมด`,msg:`฿${amt} × ${N} = ฿${(amt*N).toLocaleString()}\nประเภท: ${label}${txDate!==today?`\n📅 ${txDate}`:""}`,onConfirm:()=>{const u={};soldiers.forEach(s=>{u[`balances/${s.id}`]=(balances[s.id]||0)+amt});db.ref().update(u);soldiers.forEach(s=>fbPush("transactions",{soldierId:s.id,soldierName:s.name,action:"topup",total:amt,depositType:depositType,note:`ฝาก${label}รอบ ฿${amt}`,date:txDate,time:fmtTime()}));setBatchAmt("");setModal(null);notify(`✅ ฝาก${label} ฿${amt}×${N}`)}})};
 
   const filteredSoldiers=soldiers.filter(s=>s.name.includes(search)||String(s.id).includes(search));
   const filteredMenu=useMemo(()=>{let m=menu;if(menuType!=="all")m=m.filter(x=>x.type===menuType);if(menuCat!=="ทั้งหมด")m=m.filter(x=>x.cat===menuCat);return m},[menu,menuType,menuCat]);
@@ -324,8 +325,36 @@ function App(){
       <button style={{fontSize:11,padding:"4px 12px",border:"1px solid var(--border2)",borderRadius:6,background:"transparent",color:"var(--text3)",cursor:"pointer",fontFamily:"'Sarabun'"}} onClick={()=>{setDateConfirmed(false);setTxDate(todayISO())}}>📅 เปลี่ยนวันที่</button>
     </div>
   </div>
-  <div className="card"><div className="card-title">💰 ฝากเงินรายคน</div><div className="form-row"><div className="form-field" style={{flex:2}}><label className="form-label">เลือกทหาร</label><select className="form-input" value={selSoldier?.id||""} onChange={e=>{const s=soldiers.find(x=>x.id===Number(e.target.value));setSelSoldier(s||null)}}><option value="">-- เลือก --</option>{soldiers.map(s=><option key={s.id} value={s.id}>{s.name} (฿{getBal(s.id)})</option>)}</select></div><div className="form-field"><label className="form-label">จำนวน (฿)</label><input className="form-input" type="number" placeholder="0" value={topupAmt} onChange={e=>setTopupAmt(e.target.value)}/></div><div className="form-field" style={{flex:2}}><label className="form-label">หมายเหตุ</label><input className="form-input" placeholder="ฝากค่าขนม" value={topupNote} onChange={e=>setTopupNote(e.target.value)}/></div><button className="btn-green" onClick={doTopup}>ฝากเงิน</button></div>{selSoldier&&<div style={{fontSize:13,color:"var(--text2)"}}>ปัจจุบัน: <span style={{fontWeight:700,color:getBal(selSoldier.id)>=0?"var(--green)":"var(--red)"}}>฿{getBal(selSoldier.id).toLocaleString()}</span></div>}</div>
-  <div className="card mt16"><div className="card-title">📦 ฝากทั้งหมด {N} นาย</div><div className="form-row"><div className="form-field"><label className="form-label">ต่อคน (฿)</label><input className="form-input" type="number" placeholder="0" value={batchAmt} onChange={e=>setBatchAmt(e.target.value)}/></div><div style={{fontSize:13,color:"var(--text3)",paddingBottom:4}}>รวม: ฿{(Number(batchAmt||0)*N).toLocaleString()}</div><button className="btn-blue" onClick={doBatchDeposit}>ฝากทั้งหมด</button></div></div>
+  <div className="card"><div className="card-title">💰 ฝากเงินรายคน</div><div className="form-row"><div className="form-field" style={{flex:2}}><label className="form-label">เลือกทหาร</label><select className="form-input" value={selSoldier?.id||""} onChange={e=>{const s=soldiers.find(x=>x.id===Number(e.target.value));setSelSoldier(s||null)}}><option value="">-- เลือก --</option>{soldiers.map(s=><option key={s.id} value={s.id}>{s.name} (฿{getBal(s.id)})</option>)}</select></div><div className="form-field"><label className="form-label">จำนวน (฿)</label><input className="form-input" type="number" placeholder="0" value={topupAmt} onChange={e=>setTopupAmt(e.target.value)}/></div><div className="form-field"><label className="form-label">ประเภทเงินฝาก</label><select className="form-input" value={depositType} onChange={e=>setDepositType(e.target.value)}><option value="snack">🍿 ค่าขนม</option><option value="essential">🧴 ค่าของจำเป็น</option></select></div><button className="btn-green" onClick={doTopup}>ฝากเงิน</button></div>
+    {selSoldier&&(()=>{
+      const sid=selSoldier.id;
+      const sTx=transactions.filter(t=>t.soldierId===sid);
+      const initBal=INIT_BALANCES[sid]||0;
+      const depSnack=initBal+sTx.filter(t=>t.action==="topup"&&(t.depositType||"snack")==="snack").reduce((s,t)=>s+t.total,0);
+      const depEss=sTx.filter(t=>t.action==="topup"&&t.depositType==="essential").reduce((s,t)=>s+t.total,0);
+      const spentSnack=sTx.filter(t=>t.action==="purchase"&&t.itemType==="snack").reduce((s,t)=>s+t.total,0);
+      const spentEss=sTx.filter(t=>t.action==="purchase"&&t.itemType==="essential").reduce((s,t)=>s+t.total,0);
+      const diffSnack=depSnack-spentSnack;
+      const diffEss=depEss-spentEss;
+      return<div style={{marginTop:10,padding:14,background:"rgba(0,0,0,.15)",borderRadius:10,border:"1px solid var(--border)"}}>
+        <div style={{fontWeight:700,fontSize:14,marginBottom:10}}>📊 สรุป {selSoldier.short} — เงินคงเหลือ: <span style={{color:getBal(sid)>=0?"var(--green)":"var(--red)"}}>฿{getBal(sid).toLocaleString()}</span></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div style={{padding:10,borderRadius:8,background:"rgba(245,158,11,.06)",border:"1px solid rgba(245,158,11,.12)"}}>
+            <div style={{fontFamily:"'Kanit'",fontSize:13,fontWeight:700,color:"var(--gold)",marginBottom:6}}>🍿 ค่าขนม</div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"3px 0",borderBottom:"1px solid rgba(255,255,255,.04)"}}><span style={{color:"var(--text3)"}}>ฝากค่าขนม</span><span style={{color:"var(--green)",fontWeight:600}}>฿{depSnack.toLocaleString()}</span></div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"3px 0",borderBottom:"1px solid rgba(255,255,255,.04)"}}><span style={{color:"var(--text3)"}}>ซื้อขนม</span><span style={{color:"var(--orange)",fontWeight:600}}>-฿{spentSnack.toLocaleString()}</span></div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"6px 0 0",fontWeight:700}}><span>{diffSnack>=0?"เหลือ":"ขาด"}</span><span style={{color:diffSnack>=0?"var(--green)":"var(--red)",fontSize:16}}>{diffSnack>=0?`฿${diffSnack.toLocaleString()}`:`-฿${Math.abs(diffSnack).toLocaleString()}`}</span></div>
+          </div>
+          <div style={{padding:10,borderRadius:8,background:"rgba(59,130,246,.06)",border:"1px solid rgba(59,130,246,.12)"}}>
+            <div style={{fontFamily:"'Kanit'",fontSize:13,fontWeight:700,color:"var(--blue)",marginBottom:6}}>🧴 ค่าของจำเป็น</div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"3px 0",borderBottom:"1px solid rgba(255,255,255,.04)"}}><span style={{color:"var(--text3)"}}>ฝากค่าของจำเป็น</span><span style={{color:"var(--green)",fontWeight:600}}>฿{depEss.toLocaleString()}</span></div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"3px 0",borderBottom:"1px solid rgba(255,255,255,.04)"}}><span style={{color:"var(--text3)"}}>ซื้อของจำเป็น</span><span style={{color:"var(--orange)",fontWeight:600}}>-฿{spentEss.toLocaleString()}</span></div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"6px 0 0",fontWeight:700}}><span>{diffEss>=0?"เหลือ":"ขาด"}</span><span style={{color:diffEss>=0?"var(--green)":"var(--red)",fontSize:16}}>{diffEss>=0?`฿${diffEss.toLocaleString()}`:`-฿${Math.abs(diffEss).toLocaleString()}`}</span></div>
+          </div>
+        </div>
+      </div>
+    })()}</div>
+  <div className="card mt16"><div className="card-title">📦 ฝากทั้งหมด {N} นาย</div><div className="form-row"><div className="form-field"><label className="form-label">ต่อคน (฿)</label><input className="form-input" type="number" placeholder="0" value={batchAmt} onChange={e=>setBatchAmt(e.target.value)}/></div><div className="form-field"><label className="form-label">ประเภท</label><select className="form-input" value={depositType} onChange={e=>setDepositType(e.target.value)}><option value="snack">🍿 ค่าขนม</option><option value="essential">🧴 ค่าของจำเป็น</option></select></div><div style={{fontSize:13,color:"var(--text3)",paddingBottom:4}}>รวม: ฿{(Number(batchAmt||0)*N).toLocaleString()}</div><button className="btn-blue" onClick={doBatchDeposit}>ฝากทั้งหมด</button></div></div>
   <div className="card mt16"><div className="card-title">⚠️ ชำระหนี้ ({debtors.length} นาย ฿{totalDebt.toLocaleString()})</div>{debtors.length===0?<div className="empty-state"><p>ไม่มี</p></div>:<React.Fragment><button className="btn-danger" style={{marginBottom:10}} onClick={()=>{if(!debtors.length)return;setModal({title:"หักเงินเดือนทั้งหมด",msg:`${debtors.length} นาย ฿${totalDebt.toLocaleString()}`,onConfirm:()=>{const u={};debtors.forEach(s=>{u[`balances/${s.id}`]=0;fbPush("transactions",{soldierId:s.id,soldierName:s.name,action:"salary",total:Math.abs(getBal(s.id)),note:"หักเงินเดือน",date:txDate,time:fmtTime()})});db.ref().update(u);setModal(null);notify(`✅ ชำระ ${debtors.length} นาย`)}})}}>หักทั้งหมด</button><div className="tx-table-wrap"><table className="tx-table"><thead><tr><th>#</th><th>ชื่อ</th><th>หนี้</th><th></th></tr></thead><tbody>{debtors.map(s=><tr key={s.id}><td>{s.id}</td><td>{s.name}</td><td style={{color:"var(--red)",fontWeight:700}}>฿{Math.abs(getBal(s.id)).toLocaleString()}</td><td><button className="btn-outline-gold" style={{fontSize:10,padding:"2px 8px"}} onClick={()=>doSalaryPayback(s)}>หักเงินเดือน</button></td></tr>)}</tbody></table></div></React.Fragment>}</div>
 </div>}
 
@@ -360,32 +389,68 @@ function App(){
     const totalEss=allTx.filter(t=>t.action==="purchase"&&t.itemType==="essential").reduce((s,t)=>s+t.total,0);
     const initBal=INIT_BALANCES[sid]||0;
     const totalAllDeposits=initBal+totalTopup;
+    const depSnack=initBal+allTx.filter(t=>t.action==="topup"&&(t.depositType||"snack")==="snack").reduce((s,t)=>s+t.total,0);
+    const depEss=allTx.filter(t=>t.action==="topup"&&t.depositType==="essential").reduce((s,t)=>s+t.total,0);
+    const balSnack=depSnack-totalSnack;
+    const balEss=depEss-totalEss;
 
     return<React.Fragment>
       {/* Summary Card */}
       <div className="card" style={{marginBottom:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:10}}>
           <div style={{fontFamily:"'Kanit'",fontSize:18,fontWeight:700}}>🎖️ {selSoldier.name}</div>
-          <div style={{fontWeight:700,fontSize:18,color:getBal(sid)>=0?"var(--green)":"var(--red)"}}>คงเหลือ: ฿{getBal(sid).toLocaleString()}</div>
+          <div style={{fontWeight:700,fontSize:18,color:getBal(sid)>=0?"var(--green)":"var(--red)"}}>คงเหลือรวม: ฿{getBal(sid).toLocaleString()}</div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:8}}>
+
+        {/* Row 1: Deposits */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,marginBottom:8}}>
           <div style={{padding:"8px 12px",background:"rgba(16,185,129,.08)",borderRadius:8,border:"1px solid rgba(16,185,129,.12)"}}>
             <div style={{fontSize:10,color:"var(--text3)"}}>💰 ฝากเงินทั้งหมด</div>
             <div style={{fontFamily:"'Kanit'",fontSize:18,fontWeight:700,color:"var(--green)"}}>฿{totalAllDeposits.toLocaleString()}</div>
-            <div style={{fontSize:9,color:"var(--text3)"}}>(เริ่มต้น ฿{initBal.toLocaleString()}{totalTopup>0?` + ฝากเพิ่ม ฿${totalTopup.toLocaleString()}`:""})</div>
           </div>
+          <div style={{padding:"8px 12px",background:"rgba(245,158,11,.06)",borderRadius:8,border:"1px solid rgba(245,158,11,.1)"}}>
+            <div style={{fontSize:10,color:"var(--text3)"}}>🍿 ฝากค่าขนม</div>
+            <div style={{fontFamily:"'Kanit'",fontSize:18,fontWeight:700,color:"var(--gold)"}}>฿{depSnack.toLocaleString()}</div>
+            <div style={{fontSize:9,color:"var(--text3)"}}>(เริ่มต้น ฿{initBal.toLocaleString()}{depSnack-initBal>0?` + เพิ่ม ฿${(depSnack-initBal).toLocaleString()}`:""})</div>
+          </div>
+          <div style={{padding:"8px 12px",background:"rgba(59,130,246,.06)",borderRadius:8,border:"1px solid rgba(59,130,246,.1)"}}>
+            <div style={{fontSize:10,color:"var(--text3)"}}>🧴 ฝากค่าของจำเป็น</div>
+            <div style={{fontFamily:"'Kanit'",fontSize:18,fontWeight:700,color:"var(--blue)"}}>฿{depEss.toLocaleString()}</div>
+          </div>
+        </div>
+
+        {/* Row 2: Spending */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,marginBottom:8}}>
           <div style={{padding:"8px 12px",background:"rgba(249,115,22,.08)",borderRadius:8,border:"1px solid rgba(249,115,22,.12)"}}>
-            <div style={{fontSize:10,color:"var(--text3)"}}>ซื้อทั้งหมด</div>
+            <div style={{fontSize:10,color:"var(--text3)"}}>🛒 ซื้อทั้งหมด</div>
             <div style={{fontFamily:"'Kanit'",fontSize:18,fontWeight:700,color:"var(--orange)"}}>฿{totalPurchased.toLocaleString()}</div>
           </div>
-          <div style={{padding:"8px 12px",background:"rgba(245,158,11,.08)",borderRadius:8,border:"1px solid rgba(245,158,11,.12)"}}>
-            <div style={{fontSize:10,color:"var(--text3)"}}>🍿 ขนม</div>
+          <div style={{padding:"8px 12px",background:"rgba(245,158,11,.04)",borderRadius:8,border:"1px solid rgba(245,158,11,.08)"}}>
+            <div style={{fontSize:10,color:"var(--text3)"}}>🍿 ซื้อขนม</div>
             <div style={{fontFamily:"'Kanit'",fontSize:18,fontWeight:700,color:"var(--gold)"}}>฿{totalSnack.toLocaleString()}</div>
           </div>
-          <div style={{padding:"8px 12px",background:"rgba(59,130,246,.08)",borderRadius:8,border:"1px solid rgba(59,130,246,.12)"}}>
-            <div style={{fontSize:10,color:"var(--text3)"}}>🧴 ของจำเป็น</div>
+          <div style={{padding:"8px 12px",background:"rgba(59,130,246,.04)",borderRadius:8,border:"1px solid rgba(59,130,246,.08)"}}>
+            <div style={{fontSize:10,color:"var(--text3)"}}>🧴 ซื้อของจำเป็น</div>
             <div style={{fontFamily:"'Kanit'",fontSize:18,fontWeight:700,color:"var(--blue)"}}>฿{totalEss.toLocaleString()}</div>
           </div>
+        </div>
+
+        {/* Row 3: Balance per type */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+          <div style={{padding:"10px 14px",background:balSnack>=0?"rgba(16,185,129,.08)":"rgba(239,68,68,.08)",borderRadius:8,border:balSnack>=0?"1px solid rgba(16,185,129,.2)":"1px solid rgba(239,68,68,.2)"}}>
+            <div style={{fontSize:11,color:"var(--text3)",marginBottom:2}}>🍿 ค่าขนมคงเหลือ</div>
+            <div style={{fontFamily:"'Kanit'",fontSize:22,fontWeight:800,color:balSnack>=0?"var(--green)":"var(--red)"}}>{balSnack>=0?`฿${balSnack.toLocaleString()}`:`-฿${Math.abs(balSnack).toLocaleString()}`}</div>
+            <div style={{fontSize:10,fontWeight:600,color:balSnack>=0?"var(--green)":"var(--red)",marginTop:2}}>{balSnack>=0?`✅ เหลือ ฿${balSnack.toLocaleString()}`:`❌ ขาด ฿${Math.abs(balSnack).toLocaleString()}`}</div>
+          </div>
+          <div style={{padding:"10px 14px",background:balEss>=0?"rgba(16,185,129,.08)":"rgba(239,68,68,.08)",borderRadius:8,border:balEss>=0?"1px solid rgba(16,185,129,.2)":"1px solid rgba(239,68,68,.2)"}}>
+            <div style={{fontSize:11,color:"var(--text3)",marginBottom:2}}>🧴 ค่าของจำเป็นคงเหลือ</div>
+            <div style={{fontFamily:"'Kanit'",fontSize:22,fontWeight:800,color:balEss>=0?"var(--green)":"var(--red)"}}>{balEss>=0?`฿${balEss.toLocaleString()}`:`-฿${Math.abs(balEss).toLocaleString()}`}</div>
+            <div style={{fontSize:10,fontWeight:600,color:balEss>=0?"var(--green)":"var(--red)",marginTop:2}}>{balEss>=0?`✅ เหลือ ฿${balEss.toLocaleString()}`:`❌ ขาด ฿${Math.abs(balEss).toLocaleString()}`}</div>
+          </div>
+        </div>
+
+        {/* Row 4: Others */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:8}}>
           <div style={{padding:"8px 12px",background:"rgba(168,85,247,.08)",borderRadius:8,border:"1px solid rgba(168,85,247,.12)"}}>
             <div style={{fontSize:10,color:"var(--text3)"}}>หักเงินเดือน</div>
             <div style={{fontFamily:"'Kanit'",fontSize:18,fontWeight:700,color:"var(--purple)"}}>฿{totalSalary.toLocaleString()}</div>
