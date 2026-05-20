@@ -185,6 +185,24 @@ function App(){
   const totalDeposits=useMemo(()=>Object.values(balances).reduce((s,v)=>s+(v>0?v:0),0),[balances]);
   const totalDebt=useMemo(()=>Object.values(balances).reduce((s,v)=>s+(v<0?Math.abs(v):0),0),[balances]);
   const debtCount=useMemo(()=>Object.values(balances).filter(v=>v<0).length,[balances]);
+  const totalSnackDebt=useMemo(()=>{
+    let total=0;soldiers.forEach(s=>{
+      const sid=s.id;const initBal=INIT_BALANCES[sid]||0;
+      const sTx=transactions.filter(t=>t.soldierId===sid);
+      const depSnack=initBal+sTx.filter(t=>t.action==="topup"&&(t.depositType||"snack")==="snack").reduce((sum,t)=>sum+t.total,0);
+      const spentSnack=sTx.filter(t=>t.action==="purchase"&&t.itemType==="snack").reduce((sum,t)=>sum+t.total,0);
+      const diff=depSnack-spentSnack;if(diff<0)total+=Math.abs(diff);
+    });return total;
+  },[transactions,soldiers,balances]);
+  const totalEssDebt=useMemo(()=>{
+    let total=0;soldiers.forEach(s=>{
+      const sid=s.id;
+      const sTx=transactions.filter(t=>t.soldierId===sid);
+      const depEss=sTx.filter(t=>t.action==="topup"&&t.depositType==="essential").reduce((sum,t)=>sum+t.total,0);
+      const spentEss=sTx.filter(t=>t.action==="purchase"&&t.itemType==="essential").reduce((sum,t)=>sum+t.total,0);
+      const diff=depEss-spentEss;if(diff<0)total+=Math.abs(diff);
+    });return total;
+  },[transactions,soldiers]);
   const todaySpent=todayTx.filter(t=>t.action==="purchase").reduce((s,t)=>s+t.total,0);
   const todaySnack=todayTx.filter(t=>t.action==="purchase"&&t.itemType==="snack").reduce((s,t)=>s+t.total,0);
   const todayEssential=todayTx.filter(t=>t.action==="purchase"&&t.itemType==="essential").reduce((s,t)=>s+t.total,0);
@@ -274,6 +292,14 @@ function App(){
     <div className="dash-card accent-gold"><div className="dc-icon">🍿</div><div><div className="dc-label">ขนมวันนี้</div><div className="dc-val" style={{color:"var(--gold)"}}>฿{todaySnack.toLocaleString()}</div></div></div>
     <div className="dash-card accent-blue"><div className="dc-icon">🧴</div><div><div className="dc-label">ของจำเป็น</div><div className="dc-val" style={{color:"var(--blue)"}}>฿{todayEssential.toLocaleString()}</div></div></div>
     <div className="dash-card accent-purple"><div className="dc-icon">⚠️</div><div><div className="dc-label">ติดหนี้</div><div className="dc-val" style={{color:"var(--red)"}}>{debtCount}/{N}</div></div></div>
+  </div>
+  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:12}}>
+    <div className="dash-card" style={{background:"linear-gradient(135deg,rgba(245,158,11,.1),rgba(245,158,11,.03))",borderColor:"rgba(245,158,11,.2)"}}>
+      <div className="dc-icon">🍿</div><div><div className="dc-label">ค่าขนมติดลบรวม (ทุกคน)</div><div className="dc-val" style={{color:"var(--red)"}}>-฿{totalSnackDebt.toLocaleString()}</div></div>
+    </div>
+    <div className="dash-card" style={{background:"linear-gradient(135deg,rgba(59,130,246,.1),rgba(59,130,246,.03))",borderColor:"rgba(59,130,246,.2)"}}>
+      <div className="dc-icon">🧴</div><div><div className="dc-label">ค่าของจำเป็นติดลบรวม (ทุกคน)</div><div className="dc-val" style={{color:"var(--red)"}}>-฿{totalEssDebt.toLocaleString()}</div></div>
+    </div>
   </div>
   <div className="grid-2 mt16">
     <div className="card"><div className="card-title">⚠️ ติดหนี้ ({debtors.length})</div>{debtors.length===0?<div className="empty-state"><p>ไม่มี</p></div>:<div className="tx-table-wrap" style={{maxHeight:250}}><table className="tx-table"><thead><tr><th>#</th><th>ชื่อ</th><th>หนี้</th><th></th></tr></thead><tbody>{debtors.map(s=><tr key={s.id}><td>{s.id}</td><td>{s.name}</td><td style={{color:"var(--red)",fontWeight:700}}>฿{Math.abs(getBal(s.id)).toLocaleString()}</td><td><button className="btn-outline-gold" style={{fontSize:10,padding:"2px 8px"}} onClick={()=>doSalaryPayback(s)}>หักเงินเดือน</button></td></tr>)}</tbody></table></div>}</div>
